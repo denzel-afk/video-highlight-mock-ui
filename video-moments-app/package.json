@@ -1,0 +1,49 @@
+{
+  "name": "video-moments-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "react-native start",
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
+    "@react-native-masked-view/masked-view": "^0.3.1",
+    "@react-navigation/native": "^6.1.9",
+    "@react-navigation/stack": "^6.3.20",
+    "expo": "^55.0.8",
+    "expo-av": "^16.0.8",
+    "expo-blur": "~55.0.10",
+    "expo-linear-gradient": "~55.0.9",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-native": "0.73.4",
+    "react-native-gesture-handler": "^2.14.1",
+    "react-native-safe-area-context": "^4.8.2",
+    "react-native-screens": "^3.29.0",
+    "react-native-video": "^6.0.0-rc.0",
+    "react-native-web": "^0.21.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@babel/preset-env": "^7.20.0",
+    "@babel/runtime": "^7.20.0",
+    "@react-native/babel-preset": "^0.73.19",
+    "@react-native/eslint-config": "^0.73.2",
+    "@react-native/metro-config": "^0.73.3",
+    "@react-native/typescript-config": "^0.73.1",
+    "@types/react": "^18.2.6",
+    "@types/react-test-renderer": "^18.0.0",
+    "babel-jest": "^29.6.3",
+    "babel-preset-expo": "^55.0.12",
+    "jest": "^29.6.3",
+    "prettier": "^2.8.8",
+    "react-test-renderer": "18.2.0",
+    "typescript": "^5.0.4"
+  },
+  "jest": {
+    "preset": "react-native"
+  }
+}
