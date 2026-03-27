@@ -1,552 +1,759 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  Image,
-  ScrollView,
   TouchableOpacity,
   Dimensions,
-  SafeAreaView,
-  PanResponder,
   StatusBar,
+  Animated,
+  PanResponder,
+  LayoutChangeEvent,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
-import { Moment } from "../types";
+import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 
 const { width, height } = Dimensions.get("window");
 
-// ─── Glass Token System ──────────────────────────────────────────────────────
+const VIDEO_SOURCE = require("../data/birthday_surprise.mp4");
+
 const GLASS = {
-  // Surfaces
-  overlayDark: "rgba(0,0,0,0.52)",
-  overlayMid: "rgba(20,20,30,0.62)",
-  overlayLight: "rgba(255,255,255,0.10)",
-  // Borders
-  borderWhite: "rgba(255,255,255,0.18)",
-  borderWhiteBright: "rgba(255,255,255,0.32)",
-  // Accent
-  accentGlow: "rgba(120,200,255,0.55)",
-  accentBorder: "rgba(140,210,255,0.70)",
-  // Text
-  textPrimary: "#FFFFFF",
-  textSecondary: "rgba(255,255,255,0.65)",
-  textMuted: "rgba(255,255,255,0.40)",
+  overlayMid: "rgba(15,15,25,0.82)",
+  overlayLight: "rgba(255,255,255,0.09)",
+  borderWhite: "rgba(255,255,255,0.14)",
+  textMuted: "rgba(255,255,255,0.55)",
 };
 
-// ─── Sample Data ─────────────────────────────────────────────────────────────
-const sampleMoments: Moment[] = [
-  {
-    id: "1",
-    type: "nature",
-    thumbnail:
-      "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800",
-    description: "Beautiful sunset at the beach",
-    videoUrl: "https://example.com/video1.mp4",
-    timestamp: 0,
-  },
-  {
-    id: "2",
-    type: "event",
-    thumbnail:
-      "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800",
-    description: "Birthday celebration with friends",
-    videoUrl: "https://example.com/video2.mp4",
-    timestamp: 0,
-  },
-  {
-    id: "3",
-    type: "nature",
-    thumbnail:
-      "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?w=800",
-    description: "Mountain hiking adventure",
-    videoUrl: "https://example.com/video3.mp4",
-    timestamp: 0,
-  },
-  {
-    id: "4",
-    type: "event",
-    thumbnail:
-      "https://images.unsplash.com/photo-1511765224389-37f0e77cf0eb?w=800",
-    description: "City lights at night",
-    videoUrl: "https://example.com/video4.mp4",
-    timestamp: 0,
-  },
-  {
-    id: "5",
-    type: "nature",
-    thumbnail:
-      "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800",
-    description: "Forest pathway",
-    videoUrl: "https://example.com/video5.mp4",
-    timestamp: 0,
-  },
-  {
-    id: "6",
-    type: "event",
-    thumbnail:
-      "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=800",
-    description: "Lake view",
-    videoUrl: "https://example.com/video6.mp4",
-    timestamp: 0,
-  },
+type Category = "event" | "nature" | "emotion";
+
+const CAT: Record<Category, { label: string; icon: string; accent: string }> = {
+  event: { label: "Event", icon: "calendar-outline", accent: "#FFB347" },
+  nature: { label: "Nature", icon: "leaf-outline", accent: "#6EE77A" },
+  emotion: { label: "Emotion", icon: "heart-outline", accent: "#FF6FA1" },
+};
+
+type Highlight = { id: string; category: Category; start: number; end: number };
+
+const HIGHLIGHTS: Highlight[] = [
+  { id: "e1", category: "event", start: 5, end: 9 },
+  { id: "e2", category: "event", start: 33, end: 37 },
+  { id: "n1", category: "nature", start: 13, end: 17 },
+  { id: "n2", category: "nature", start: 44, end: 48 },
+  { id: "m1", category: "emotion", start: 21, end: 26 },
+  { id: "m2", category: "emotion", start: 50, end: 54 },
 ];
 
-// ─── Glass Pill Button ────────────────────────────────────────────────────────
-const GlassPill = ({
-  children,
-  onPress,
-  style,
-}: {
-  children: React.ReactNode;
-  onPress?: () => void;
-  style?: object;
-}) => (
-  <TouchableOpacity
-    onPress={onPress}
-    activeOpacity={0.75}
-    style={[styles.glassPill, style]}
-  >
-    {children}
-  </TouchableOpacity>
-);
-
-// ─── Top Bar ──────────────────────────────────────────────────────────────────
-const TopBar = () => (
-  <View style={styles.topBar}>
-    {/* Left: back */}
-    <GlassPill onPress={() => {}}>
-      <Ionicons name="chevron-back" size={20} color={GLASS.textPrimary} />
-    </GlassPill>
-
-    {/* Right: loop + more */}
-    <View style={styles.topRight}>
-      <GlassPill onPress={() => {}} style={{ marginRight: 8 }}>
-        <Ionicons name="refresh-outline" size={18} color={GLASS.textPrimary} />
-      </GlassPill>
-      <GlassPill onPress={() => {}}>
-        <Ionicons
-          name="ellipsis-vertical"
-          size={18}
-          color={GLASS.textPrimary}
-        />
-      </GlassPill>
-    </View>
-  </View>
-);
-
-// ─── Video Controls Overlay ───────────────────────────────────────────────────
-const VideoControls = ({
-  isVideo,
-  currentTime = "00:01",
-  duration = "00:10",
-}: {
-  isVideo: boolean;
-  currentTime?: string;
-  duration?: string;
-}) => {
-  const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(true);
-
-  if (!isVideo) return null;
-
-  return (
-    <View style={styles.videoControlsWrap}>
-      {/* Play button - circular glass */}
-      <TouchableOpacity
-        onPress={() => setPlaying((p) => !p)}
-        style={styles.videoPlayBtn}
-        activeOpacity={0.75}
-      >
-        <Ionicons
-          name={playing ? "pause" : "play"}
-          size={16}
-          color="#fff"
-          style={{ marginLeft: playing ? 0 : 2 }}
-        />
-      </TouchableOpacity>
-
-      {/* Timestamp */}
-      <Text style={styles.videoTimestamp}>
-        {currentTime} / {duration}
-      </Text>
-
-      {/* Mute button - circular glass */}
-      <TouchableOpacity
-        onPress={() => setMuted((m) => !m)}
-        style={styles.videoPlayBtn}
-        activeOpacity={0.75}
-      >
-        <Ionicons
-          name={muted ? "volume-mute" : "volume-high"}
-          size={16}
-          color="#fff"
-        />
-      </TouchableOpacity>
-    </View>
-  );
+const fmt = (s: number) => {
+  const m = Math.floor(s / 60).toString().padStart(2, "0");
+  const sec = Math.floor(s % 60).toString().padStart(2, "0");
+  return `${m}:${sec}`;
 };
 
-// ─── Thumbnail Strip ──────────────────────────────────────────────────────────
-const ThumbnailStrip = ({
-  moments,
-  selectedIndex,
-  onSelect,
-}: {
-  moments: Moment[];
-  selectedIndex: number;
-  onSelect: (i: number) => void;
-}) => (
-  <View style={styles.filmstripWrap}>
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.filmstripContent}
-    >
-      {moments.map((m, i) => {
-        const active = i === selectedIndex;
-        return (
-          <TouchableOpacity
-            key={m.id}
-            onPress={() => onSelect(i)}
-            activeOpacity={0.8}
-            style={[styles.thumbItem, active && styles.thumbItemActive]}
-          >
-            <Image
-              source={{ uri: m.thumbnail }}
-              style={styles.thumbImg}
-              resizeMode="cover"
-            />
-            {/* Active glow overlay */}
-            {active && <View style={styles.thumbActiveOverlay} />}
-            {/* Video badge */}
-            {m.videoUrl && (
-              <View style={styles.thumbVideoBadge}>
-                <Ionicons name="play" size={8} color="#fff" />
-              </View>
-            )}
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  </View>
+const GAP = 16;
+const PHONE_HEIGHT = Math.min(height * 0.82, 840);
+const PHONE_WIDTH = Math.min(
+  PHONE_HEIGHT / (19.5 / 9),
+  (width - GAP * 2 - 32) / 3,
 );
+const INNER_RADIUS = 18;
 
-// ─── Action Bar ───────────────────────────────────────────────────────────────
-const ACTIONS = [
-  { icon: "heart-outline", label: "Like" },
-  { icon: "create-outline", label: "Edit" },
-  { icon: "information-circle-outline", label: "Info" },
-  { icon: "share-social-outline", label: "Share" },
-  { icon: "trash-outline", label: "Delete" },
-] as const;
+const s = (base: number) => Math.round((PHONE_WIDTH / 260) * base);
 
-const ActionBar = () => {
-  const [liked, setLiked] = useState(false);
-  return (
-    <View style={styles.actionBar}>
-      {ACTIONS.map(({ icon, label }) => {
-        const isHeart = label === "Like";
-        return (
-          <TouchableOpacity
-            key={label}
-            style={styles.actionBtn}
-            onPress={() => isHeart && setLiked((l) => !l)}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={isHeart && liked ? "heart" : (icon as any)}
-              size={22}
-              color={isHeart && liked ? "#ff5c87" : GLASS.textPrimary}
-            />
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-};
+const PhoneScreen = ({ category }: { category: Category }) => {
+  const videoRef = useRef<Video>(null);
+  const prevHLId = useRef<string | null>(null);
 
-// ─── Main Screen ─────────────────────────────────────────────────────────────
-const HomeScreen = () => {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const selectedMoment = sampleMoments[selectedIndex];
+  const glowAnim = useRef(new Animated.Value(0)).current;
+  const flashAnim = useRef(new Animated.Value(0)).current;
+  const sweepAnim = useRef(new Animated.Value(-1)).current;
 
-  const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8,
-    onPanResponderRelease: (_, { dx }) => {
-      if (dx > 50 && selectedIndex > 0) setSelectedIndex((i) => i - 1);
-      else if (dx < -50 && selectedIndex < sampleMoments.length - 1)
-        setSelectedIndex((i) => i + 1);
-    },
+  const badgeOpacity = useRef(new Animated.Value(0)).current;
+  const badgeTranslateY = useRef(new Animated.Value(0)).current;
+  const badgeScale = useRef(new Animated.Value(1)).current;
+
+  const headScale = useRef(new Animated.Value(1)).current;
+
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(60);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted] = useState(true);
+
+  const trackWidthRef = useRef(1);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubProgress, setScrubProgress] = useState(0);
+
+
+  const { accent, label, icon } = CAT[category];
+  const catHL = HIGHLIGHTS.filter((h) => h.category === category);
+  const activeHL =
+    catHL.find((h) => position >= h.start && position <= h.end) ?? null;
+  const progress = duration > 0 ? position / duration : 0;
+  const displayProgress = isScrubbing ? scrubProgress : progress;
+
+  useEffect(() => {
+    const first = catHL[0];
+    if (!first) return;
+    const t = setTimeout(async () => {
+      await videoRef.current?.setPositionAsync(
+        Math.max(0, (first.start - 1) * 1000),
+      );
+      await videoRef.current?.playAsync();
+      setIsPlaying(true);
+    }, 400);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (activeHL && activeHL.id !== prevHLId.current) {
+      prevHLId.current = activeHL.id;
+
+      Animated.sequence([
+        Animated.timing(glowAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: false,
+        }),
+        Animated.timing(glowAnim, {
+          toValue: 0,
+          duration: 1400,
+          useNativeDriver: false,
+        }),
+      ]).start();
+
+      Animated.sequence([
+        Animated.timing(flashAnim, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.timing(flashAnim, {
+          toValue: 0,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      sweepAnim.setValue(-1);
+      Animated.timing(sweepAnim, {
+        toValue: 1.2,
+        duration: 850,
+        useNativeDriver: true,
+      }).start();
+
+      badgeOpacity.setValue(0);
+      badgeTranslateY.setValue(PHONE_HEIGHT * 0.32);
+      badgeScale.setValue(1.08);
+
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(badgeOpacity, {
+            toValue: 1,
+            duration: 180,
+            useNativeDriver: true,
+          }),
+          Animated.spring(badgeScale, {
+            toValue: 1,
+            tension: 90,
+            friction: 8,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.delay(420),
+        Animated.parallel([
+          Animated.spring(badgeTranslateY, {
+            toValue: 0,
+            tension: 70,
+            friction: 11,
+            useNativeDriver: true,
+          }),
+          Animated.timing(badgeScale, {
+            toValue: 0.75,
+            duration: 260,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start();
+    }
+
+    if (!activeHL) {
+      prevHLId.current = null;
+      Animated.timing(badgeOpacity, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [activeHL?.id]);
+
+  const onStatus = useCallback((st: AVPlaybackStatus) => {
+    if (!st.isLoaded) return;
+    setPosition(st.positionMillis / 1000);
+    if (st.durationMillis) setDuration(st.durationMillis / 1000);
+    if (st.didJustFinish) setIsPlaying(false);
+  }, []);
+
+  const togglePlay = async () => {
+    if (isPlaying) await videoRef.current?.pauseAsync();
+    else await videoRef.current?.playAsync();
+    setIsPlaying((p) => !p);
+  };
+
+  const seekTo = async (seconds: number) => {
+    const next = Math.max(0, Math.min(seconds, duration));
+    await videoRef.current?.setPositionAsync(next * 1000);
+  };
+
+  const seekAndPlay = async (seconds: number) => {
+    const next = Math.max(0, Math.min(seconds, duration));
+    await videoRef.current?.setPositionAsync(next * 1000);
+    await videoRef.current?.playAsync();
+    setIsPlaying(true);
+  };
+
+  const onTrackLayout = (e: LayoutChangeEvent) => {
+    trackWidthRef.current = e.nativeEvent.layout.width;
+  };
+
+  const ratioFromX = (x: number) => {
+    const w = trackWidthRef.current;
+    if (w <= 1) return 0;
+    return Math.max(0, Math.min(x / w, 1));
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+
+      onPanResponderGrant: (evt) => {
+        const ratio = ratioFromX(evt.nativeEvent.locationX);
+        setIsScrubbing(true);
+        setScrubProgress(ratio);
+
+        Animated.spring(headScale, {
+          toValue: 1.18,
+          tension: 120,
+          friction: 9,
+          useNativeDriver: true,
+        }).start();
+      },
+
+      onPanResponderMove: (evt) => {
+        const ratio = ratioFromX(evt.nativeEvent.locationX);
+        setScrubProgress(ratio);
+      },
+
+      onPanResponderRelease: async (evt) => {
+        const ratio = ratioFromX(evt.nativeEvent.locationX);
+        setScrubProgress(ratio);
+        setIsScrubbing(false);
+
+        Animated.spring(headScale, {
+          toValue: 1,
+          tension: 120,
+          friction: 9,
+          useNativeDriver: true,
+        }).start();
+
+        await seekAndPlay(ratio * duration);
+      },
+
+      onPanResponderTerminate: async (evt) => {
+        const ratio = ratioFromX(evt.nativeEvent.locationX);
+        setScrubProgress(ratio);
+        setIsScrubbing(false);
+
+        Animated.spring(headScale, {
+          toValue: 1,
+          tension: 120,
+          friction: 9,
+          useNativeDriver: true,
+        }).start();
+
+        await seekAndPlay(ratio * duration);
+      },
+    }),
+  ).current;
+
+  const borderColor = glowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["rgba(255,255,255,0.12)", accent],
+  });
+  const shadowRadius = glowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [8, 28],
+  });
+  const shadowOpacity = glowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.4, 0.95],
   });
 
+
   return (
-    <View style={styles.root}>
-      {/* Simulated Huawei device frame centered in the screen */}
-      <View style={styles.deviceWrap} pointerEvents="box-none">
-        <View style={styles.deviceFrame}>
-          {/* Punch-hole camera (visual only) */}
-          <View style={styles.punchHoleRing}>
-            <View style={styles.punchHole} />
-          </View>
+    <Animated.View
+      style={[
+        styles.deviceFrame,
+        {
+          borderColor,
+          shadowColor: accent,
+          shadowRadius,
+          shadowOpacity,
+        },
+      ]}
+    >
+      <View style={styles.punchHole} />
 
-          {/* Inner screen where the app UI lives */}
-          <View style={styles.innerScreen} {...panResponder.panHandlers}>
-            <StatusBar
-              barStyle="light-content"
-              translucent
-              backgroundColor="transparent"
-            />
+      <View style={styles.innerScreen}>
+        <Video
+          ref={videoRef}
+          source={VIDEO_SOURCE}
+          style={StyleSheet.absoluteFillObject}
+          resizeMode={ResizeMode.COVER}
+          onPlaybackStatusUpdate={onStatus}
+          shouldPlay={false}
+          isLooping={false}
+          isMuted={isMuted}
+        />
 
-            {/* Full-bleed background photo inside device */}
-            <Image
-              source={{ uri: selectedMoment.thumbnail }}
-              style={StyleSheet.absoluteFillObject}
-              resizeMode="cover"
-            />
+        <LinearGradient
+          colors={["rgba(0,0,0,0.30)", "transparent", "rgba(0,0,0,0.78)"]}
+          locations={[0, 0.42, 1]}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
 
-            {/* Dim gradient scrim - top & bottom */}
-            <LinearGradient
-              colors={[
-                "rgba(0,0,0,0.55)",
-                "transparent",
-                "transparent",
-                "rgba(0,0,0,0.72)",
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFillObject,
+            {
+              backgroundColor: accent,
+              opacity: flashAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 0.22],
+              }),
+            },
+          ]}
+        />
+
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.sweepWrap,
+            {
+              transform: [
+                {
+                  translateX: sweepAnim.interpolate({
+                    inputRange: [-1, 1.2],
+                    outputRange: [-PHONE_WIDTH * 1.2, PHONE_WIDTH * 1.2],
+                  }),
+                },
+                { rotate: "-18deg" },
+              ],
+              opacity: sweepAnim.interpolate({
+                inputRange: [-1, -0.6, 0, 0.8, 1.2],
+                outputRange: [0, 0, 0.22, 0.08, 0],
+              }),
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={[
+              "rgba(255,255,255,0)",
+              "rgba(255,255,255,0.18)",
+              "rgba(255,255,255,0.38)",
+              "rgba(255,255,255,0.18)",
+              "rgba(255,255,255,0)",
+            ]}
+            locations={[0, 0.25, 0.5, 0.75, 1]}
+            style={styles.sweepBand}
+          />
+        </Animated.View>
+
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.badgeAnchor,
+            {
+              opacity: badgeOpacity,
+              transform: [
+                { translateY: badgeTranslateY },
+                { scale: badgeScale },
+              ],
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={["rgba(0,0,0,0.76)", "rgba(20,20,28,0.62)"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.centerBadge, { borderColor: accent }]}
+          >
+            <View
+              style={[
+                styles.centerBadgeIconWrap,
+                { backgroundColor: `${accent}20` },
               ]}
-              locations={[0, 0.25, 0.6, 1]}
-              style={StyleSheet.absoluteFillObject}
-              pointerEvents="none"
-            />
+            >
+              <Ionicons name={icon as any} size={s(15)} color={accent} />
+            </View>
 
-            {/* Huawei-style status row: left network, center time, right battery */}
-            <View style={styles.statusRow} pointerEvents="none">
-              <View style={styles.statusLeft}>
-                <Text style={styles.statusText}>5G</Text>
-              </View>
-              <View style={styles.statusCenter}>
-                <Text style={styles.statusText}>09:41</Text>
-              </View>
-              <View style={styles.statusRight}>
+            <View>
+              <Text
+                style={[
+                  styles.centerBadgeTitle,
+                  { color: accent, fontSize: s(12) },
+                ]}
+              >
+                {label} Highlight
+              </Text>
+            </View>
+          </LinearGradient>
+        </Animated.View>
+
+        {/* Example top controls incl. back button */}
+        {/* ── Phone status bar: time · wifi · battery ── */}
+        <View style={styles.statusBar} pointerEvents="none">
+          <Text style={[styles.statusTime, { fontSize: s(9) }]}>09:41</Text>
+          <View style={styles.statusIcons}>
+            <Ionicons name="wifi" size={s(10)} color="rgba(255,255,255,0.85)" />
+            <Ionicons
+              name="battery-half"
+              size={s(11)}
+              color="rgba(255,255,255,0.85)"
+            />
+          </View>
+        </View>
+
+        {/* ── Video date + back/menu controls ── */}
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.topIconBtn} activeOpacity={0.75}>
+            <Ionicons name="arrow-back" size={s(13)} color="#fff" />
+          </TouchableOpacity>
+
+          <Text style={[styles.videoDate, { fontSize: s(9) }]}>
+            ★ Fri, 27 Mar 2026
+          </Text>
+
+          <TouchableOpacity style={styles.topIconBtn} activeOpacity={0.75}>
+            <Ionicons name="ellipsis-horizontal" size={s(13)} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Tap area — play/pause */}
+        <TouchableOpacity
+          style={StyleSheet.absoluteFillObject}
+          onPress={togglePlay}
+          activeOpacity={1}
+        >
+          {!isPlaying && (
+            <View style={styles.playBtnWrap}>
+              <View style={styles.playBtn}>
                 <Ionicons
-                  name="battery-half"
-                  size={18}
-                  color={GLASS.textPrimary}
+                  name="play"
+                  size={s(16)}
+                  color="#fff"
+                  style={{ marginLeft: s(2) }}
                 />
               </View>
             </View>
+          )}
+        </TouchableOpacity>
 
-            {/* ── Top bar ── */}
-            <SafeAreaView style={styles.safeTop}>
-              <TopBar />
-              {/* Counter pill */}
-              <View style={styles.counterPill}>
-                <Text style={styles.counterText}>
-                  {selectedIndex + 1} / {sampleMoments.length}
-                </Text>
-              </View>
-            </SafeAreaView>
-
-            {/* Empty flexible area so the inner content sizes correctly */}
-            <View style={styles.swipeArea} />
-
-            {/* ── Bottom sheet: video controls + filmstrip + actions ── */}
-            <View style={styles.bottomSheet}>
-              {/* Video controls pill */}
-              <VideoControls isVideo={selectedMoment.type === "event"} />
-
-              {/* Thumbnail filmstrip */}
-              <ThumbnailStrip
-                moments={sampleMoments}
-                selectedIndex={selectedIndex}
-                onSelect={setSelectedIndex}
+        <View style={styles.bottomBar}>
+          {/* Progress bar */}
+          <View
+            style={styles.trackTouch}
+            onLayout={onTrackLayout}
+            {...panResponder.panHandlers}
+          >
+            <View style={styles.track}>
+              <View style={styles.trackBg} />
+              <View
+                style={[
+                  styles.fill,
+                  {
+                    width: `${displayProgress * 100}%`,
+                    backgroundColor: "rgba(255,255,255,0.90)",
+                  },
+                ]}
               />
-
-              {/* Action icons */}
-              <ActionBar />
-
-              {/* Modern gesture indicator */}
-              <SafeAreaView>
-                <View style={styles.gestureWrap} pointerEvents="none">
-                  <View style={styles.gestureBar} />
-                </View>
-              </SafeAreaView>
+              {HIGHLIGHTS.map((h) => {
+                const segAccent = CAT[h.category].accent;
+                const l = (h.start / duration) * 100;
+                const w = ((h.end - h.start) / duration) * 100;
+                const curr = h === activeHL;
+                const thisCat = h.category === category;
+                return (
+                  <View
+                    key={h.id}
+                    style={[
+                      styles.seg,
+                      {
+                        left: `${l}%`,
+                        width: `${w}%`,
+                        backgroundColor: segAccent,
+                        opacity: curr ? 1 : thisCat ? 0.65 : 0.15,
+                        height: curr ? 6 : 4,
+                        bottom: curr ? 0 : 1,
+                        borderRadius: 2,
+                      },
+                    ]}
+                  />
+                );
+              })}
+              <Animated.View
+                style={[
+                  styles.playhead,
+                  {
+                    left: `${displayProgress * 100}%`,
+                    backgroundColor: "#fff",
+                    transform: [{ scale: headScale }],
+                  },
+                ]}
+              />
             </View>
+          </View>
+
+          <Text style={[styles.timeTxt, { fontSize: s(9), textAlign: "center" }]}>
+            {fmt(isScrubbing ? scrubProgress * duration : position)} / {fmt(duration)}
+          </Text>
+
+          <View style={styles.actionRow}>
+            {(
+              [
+                "heart-outline",
+                "create-outline",
+                "share-social-outline",
+                "trash-outline",
+              ] as const
+            ).map((ic) => (
+              <TouchableOpacity
+                key={ic}
+                style={[
+                  styles.actionBtn,
+                  {
+                    width: s(34),
+                    height: s(34),
+                    borderRadius: s(17),
+                  },
+                ]}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={ic}
+                  size={s(15)}
+                  color="rgba(255,255,255,0.80)"
+                />
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 };
 
-// ─── Layout constants ────────────────────────────────────────────────────────
-const THUMB_SIZE = 56;
-// target phone aspect ratio (approx modern phone ~19.5:9)
-const DEVICE_ASPECT = 19.5 / 9;
-const DEVICE_WIDTH = Math.min(width * 0.92, 420);
-const DEVICE_HEIGHT = Math.min(
-  DEVICE_WIDTH * DEVICE_ASPECT,
-  height * 0.88,
-  920,
+const HomeScreen = () => (
+  <View style={styles.root}>
+    <StatusBar
+      barStyle="light-content"
+      translucent
+      backgroundColor="transparent"
+    />
+    <View style={styles.row}>
+      {(["event", "nature", "emotion"] as Category[]).map((cat) => (
+        <PhoneScreen key={cat} category={cat} />
+      ))}
+    </View>
+  </View>
 );
-
-// ─── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: "#0a0a0c",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  row: {
+    flexDirection: "row",
+    gap: GAP,
+    paddingHorizontal: 16,
+    alignItems: "center",
   },
 
-  // ── Device frame (Huawei-like) ──
-  deviceWrap: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 28,
-    backgroundColor: "transparent",
-  },
   deviceFrame: {
-    width: DEVICE_WIDTH,
-    height: DEVICE_HEIGHT,
-    borderRadius: 38,
-    backgroundColor: "rgba(10,10,12,0.95)",
-    padding: 10,
-    alignItems: "stretch",
-    justifyContent: "flex-start",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.6,
-    shadowRadius: 30,
-    borderWidth: 2,
-    // subtle blue accent border to match the glass accent
-    borderColor: "rgba(120,200,255,0.12)",
-  },
-  punchHoleRing: {
-    position: "absolute",
-    top: 18,
-    left: 18,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.38)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    width: PHONE_WIDTH,
+    height: PHONE_HEIGHT,
+    borderRadius: 24,
+    backgroundColor: "#111",
+    padding: 6,
+    borderWidth: 1.5,
+    shadowOffset: { width: 0, height: 0 },
   },
   punchHole: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#0b0b0b",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.6,
-    shadowRadius: 4,
+    position: "absolute",
+    top: 10,
+    alignSelf: "center",
+    width: s(9),
+    height: s(9),
+    borderRadius: s(5),
+    backgroundColor: "#060606",
+    zIndex: 50,
   },
   innerScreen: {
     flex: 1,
-    borderRadius: 30,
+    borderRadius: INNER_RADIUS,
     overflow: "hidden",
-    backgroundColor: "transparent",
-  },
-  // ── Simulated system status row ──
-  statusRow: {
-    position: "absolute",
-    top: 10,
-    left: 0,
-    right: 0,
-    height: 28,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    zIndex: 30,
-    justifyContent: "space-between",
-    pointerEvents: "none",
-  },
-  statusLeft: {
-    width: 60,
-    alignItems: "flex-start",
-    paddingLeft: 6,
-  },
-  statusCenter: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  statusRight: {
-    width: 60,
-    alignItems: "flex-end",
-    paddingRight: 6,
-  },
-  statusText: {
-    color: GLASS.textPrimary,
-    fontSize: 13,
-    fontWeight: "600",
+    backgroundColor: "#000",
   },
 
-  // ── Top area ──
-  safeTop: {
+  // Phone OS status bar
+  statusBar: {
     position: "absolute",
-    top: 36,
+    top: 0,
     left: 0,
     right: 0,
-    zIndex: 20,
-  },
-  topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingHorizontal: s(10),
+    paddingVertical: s(5),
+    zIndex: 41,
+  },
+  statusTime: {
+    color: "#fff",
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  statusIcons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(4),
+  },
+
+  // Video overlay controls + date
+  topBar: {
+    position: "absolute",
+    top: s(22),
+    left: s(8),
+    right: s(8),
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    zIndex: 40,
+  },
+  videoDate: {
+    color: "rgba(255,255,255,0.80)",
+    fontWeight: "600",
+    letterSpacing: 0.2,
+  },
+  topIconBtn: {
+    width: s(26),
+    height: s(26),
+    borderRadius: s(13),
+    backgroundColor: "rgba(0,0,0,0.34)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   topRight: {
     flexDirection: "row",
-    alignItems: "center",
-  },
-  glassPill: {
-    backgroundColor: GLASS.overlayDark,
-    borderWidth: 1,
-    borderColor: GLASS.borderWhite,
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    // iOS frosted feel via shadow
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-  },
-  counterPill: {
-    alignSelf: "flex-end",
-    marginRight: 14,
-    marginTop: 6,
-    backgroundColor: GLASS.overlayDark,
-    borderWidth: 1,
-    borderColor: GLASS.borderWhite,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-  },
-  counterText: {
-    color: GLASS.textPrimary,
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 0.5,
+    gap: s(6),
   },
 
-  // ── Swipe area ──
-  swipeArea: {
+  sweepWrap: {
+    position: "absolute",
+    top: -PHONE_HEIGHT * 0.15,
+    left: -PHONE_WIDTH * 0.5,
+    width: PHONE_WIDTH * 0.5,
+    height: PHONE_HEIGHT * 1.3,
+    zIndex: 12,
+  },
+  sweepBand: {
     flex: 1,
+    borderRadius: PHONE_WIDTH * 0.25,
   },
 
-  // ── Bottom sheet ──
-  bottomSheet: {
+  badgeAnchor: {
+    position: "absolute",
+    top: s(46),
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 30,
+  },
+  centerBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: s(8),
+    paddingHorizontal: s(12),
+    paddingVertical: s(9),
+    borderRadius: s(14),
+    borderWidth: 1,
+    minWidth: PHONE_WIDTH * 0.56,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+  },
+  centerBadgeIconWrap: {
+    width: s(28),
+    height: s(28),
+    borderRadius: s(14),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  centerBadgeTitle: {
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+
+  playBtnWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  playBtn: {
+    width: s(42),
+    height: s(42),
+    borderRadius: s(21),
+    backgroundColor: "rgba(0,0,0,0.50)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.30)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  thumb: {
+    width: s(52),
+    height: s(36),
+    borderRadius: s(8),
+    borderWidth: 1,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    gap: s(3),
+  },
+  thumbRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: s(6),
+  },
+  thumbScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.38)",
+  },
+  thumbTime: {
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+
+  bottomBar: {
     position: "absolute",
     bottom: 0,
     left: 0,
@@ -554,163 +761,92 @@ const styles = StyleSheet.create({
     backgroundColor: GLASS.overlayMid,
     borderTopWidth: 1,
     borderTopColor: GLASS.borderWhite,
-    // Backdrop blur not universally supported, so we fake it with a semi-opaque dark
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
+    paddingHorizontal: s(10),
+    paddingTop: s(8),
+    paddingBottom: s(10),
+    gap: s(7),
+    zIndex: 15,
   },
 
-  // ── Video controls ──
-  videoControlsWrap: {
+  timelineOverlay: {
+    position: "absolute",
+    left: s(10),
+    right: s(10),
+    top: "50%",
+    zIndex: 20,
+  },
+  trackTouch: {
+    paddingVertical: s(8),
+    justifyContent: "center",
+  },
+  track: {
+    height: 6,
+    justifyContent: "center",
+    position: "relative",
+    overflow: "visible",
+  },
+  trackBg: {
+    ...StyleSheet.absoluteFillObject,
+    height: 3,
+    top: 1.5,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  fill: {
+    position: "absolute",
+    left: 0,
+    top: 1.5,
+    height: 3,
+    borderRadius: 999,
+  },
+  seg: {
+    position: "absolute",
+  },
+  playhead: {
+    position: "absolute",
+    top: (6 - s(12)) / 2,
+    width: s(12),
+    height: s(12),
+    borderRadius: s(6),
+    marginLeft: -s(6),
+    borderWidth: 1.5,
+    borderColor: "#fff",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.45,
+    shadowRadius: 2,
+  },
+
+  controlRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "center",
-    marginTop: 12,
-    marginBottom: 2,
-    backgroundColor: GLASS.overlayDark,
-    borderWidth: 1,
-    borderColor: GLASS.borderWhite,
-    borderRadius: 28,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
+    justifyContent: "space-between",
   },
-  videoPlayBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: GLASS.overlayLight,
-    borderWidth: 1,
-    borderColor: GLASS.borderWhiteBright,
+  timeTxt: {
+    color: GLASS.textMuted,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  muteBtn: {
+    minWidth: s(22),
     alignItems: "center",
     justifyContent: "center",
-  },
-  videoTimestamp: {
-    color: GLASS.textPrimary,
-    fontSize: 13,
-    fontWeight: "500",
-    letterSpacing: 0.8,
-    minWidth: 90,
-    textAlign: "center",
   },
 
-  // ── Filmstrip ──
-  filmstripWrap: {
-    marginTop: 12,
-    paddingBottom: 4,
-  },
-  filmstripContent: {
-    paddingHorizontal: 12,
-    gap: 6,
-    alignItems: "center",
-  },
-  thumbItem: {
-    width: THUMB_SIZE,
-    height: THUMB_SIZE,
-    borderRadius: 10,
-    overflow: "hidden",
-    borderWidth: 1.5,
-    borderColor: GLASS.borderWhite,
-    backgroundColor: "rgba(0,0,0,0.3)",
-  },
-  thumbItemActive: {
-    borderColor: GLASS.accentBorder,
-    // Glow effect via shadow
-    shadowColor: "#8CD8FF",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  thumbImg: {
-    width: "100%",
-    height: "100%",
-  },
-  thumbActiveOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: GLASS.accentGlow,
-    borderRadius: 8,
-  },
-  thumbVideoBadge: {
-    position: "absolute",
-    bottom: 5,
-    right: 5,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    borderRadius: 8,
-    width: 18,
-    height: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: GLASS.borderWhite,
-  },
-
-  // ── Action bar ──
-  actionBar: {
+  actionRow: {
     flexDirection: "row",
     justifyContent: "space-around",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
     borderTopWidth: 1,
     borderTopColor: GLASS.borderWhite,
-    marginTop: 10,
+    paddingTop: s(7),
+    paddingBottom: s(2),
   },
   actionBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
     backgroundColor: GLASS.overlayLight,
     borderWidth: 1,
     borderColor: GLASS.borderWhite,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-  },
-
-  // ── Nav bar ──
-  navBar: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 40,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: GLASS.borderWhite,
-  },
-  navBtn: {
-    padding: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  navCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.7)",
-  },
-  // modern gesture indicator
-  gestureWrap: {
-    alignItems: "center",
-    paddingVertical: 10,
-  },
-  gestureBar: {
-    width: 80,
-    height: 6,
-    borderRadius: 4,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
   },
 });
 
