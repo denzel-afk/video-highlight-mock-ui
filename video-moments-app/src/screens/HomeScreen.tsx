@@ -1,28 +1,25 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Dimensions,
-  StatusBar,
-  Animated,
-  PanResponder,
-  LayoutChangeEvent,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
-
-const { width, height } = Dimensions.get("window");
-
-const VIDEO_SOURCE = require("../data/birthday_surprise.mp4");
+// --- Highlight UI constants and types ---
+const GAP = 16;
+const PHONE_HEIGHT = 850; // fixed height
+const PHONE_WIDTH = 400; // fixed width
+const INNER_RADIUS = 18;
+const s = (base: number) => Math.round((PHONE_WIDTH / 260) * base);
 
 const GLASS = {
   overlayMid: "rgba(15,15,25,0.82)",
   overlayLight: "rgba(255,255,255,0.09)",
   borderWhite: "rgba(255,255,255,0.14)",
   textMuted: "rgba(255,255,255,0.55)",
+};
+
+const fmt = (s: number) => {
+  const m = Math.floor(s / 60)
+    .toString()
+    .padStart(2, "0");
+  const sec = Math.floor(s % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${m}:${sec}`;
 };
 
 type Category = "event" | "nature" | "emotion";
@@ -43,24 +40,193 @@ const HIGHLIGHTS: Highlight[] = [
   { id: "m1", category: "emotion", start: 21, end: 26 },
   { id: "m2", category: "emotion", start: 50, end: 54 },
 ];
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { BlurView } from "expo-blur";
+import * as DocumentPicker from "expo-document-picker";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Dimensions,
+  StatusBar,
+  Animated,
+  PanResponder,
+  LayoutChangeEvent,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 
-const fmt = (s: number) => {
-  const m = Math.floor(s / 60).toString().padStart(2, "0");
-  const sec = Math.floor(s % 60).toString().padStart(2, "0");
-  return `${m}:${sec}`;
+const { width, height } = Dimensions.get("window");
+
+const VIDEO_SOURCE = require("../data/birthday_surprise.mp4");
+
+const HomeScreen = () => {
+  const [video, setVideo] = useState<any>(
+    require("../data/birthday_surprise.mp4"),
+  );
+  const [uploading, setUploading] = useState(false);
+  const [showLoading, setShowLoading] = useState(false);
+  const [shouldAutoPlay, setShouldAutoPlay] = useState(false);
+  const loadingAnim = useRef(new Animated.Value(0)).current;
+
+  const pickVideo = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "video/mp4",
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (res.assets && res.assets[0]?.uri) {
+        setShowLoading(true);
+        Animated.timing(loadingAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }).start();
+        setTimeout(() => {
+          setShowLoading(false);
+          setVideo({ uri: res.assets[0].uri });
+          setShouldAutoPlay(true);
+          Animated.timing(loadingAnim, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }).start();
+        }, 5000);
+      }
+    } catch (e) {
+      alert("Failed to pick video.");
+    }
+  };
+
+  return (
+    <View style={styles.root}>
+      <StatusBar
+        barStyle="light-content"
+        translucent
+        backgroundColor="transparent"
+      />
+      <TouchableOpacity
+        style={{
+          backgroundColor: "#222",
+          borderRadius: 16,
+          paddingVertical: 32,
+          paddingHorizontal: 40,
+          alignItems: "center",
+          justifyContent: "center",
+          borderWidth: 1,
+          borderColor: "#444",
+          marginBottom: 32,
+        }}
+        onPress={pickVideo}
+        disabled={uploading || showLoading}
+        activeOpacity={0.8}
+      >
+        <Ionicons
+          name="cloud-upload-outline"
+          size={48}
+          color="#fff"
+          style={{ marginBottom: 16 }}
+        />
+        <Text
+          style={{
+            color: "#fff",
+            fontSize: 18,
+            fontWeight: "bold",
+            marginBottom: 8,
+          }}
+        >
+          {showLoading
+            ? "Processing..."
+            : uploading
+            ? "Uploading..."
+            : "Upload Video"}
+        </Text>
+        <Text style={{ color: "#aaa", fontSize: 14, textAlign: "center" }}>
+          Click to select a video file to upload and process highlights.
+        </Text>
+      </TouchableOpacity>
+      <View style={styles.row}>
+        {(["event", "nature", "emotion"] as Category[]).map((cat) => (
+          <PhoneScreen
+            key={cat}
+            category={cat}
+            videoSource={video}
+            shouldAutoPlay={shouldAutoPlay}
+            setShouldAutoPlay={setShouldAutoPlay}
+          />
+        ))}
+      </View>
+      {showLoading && (
+        <Animated.View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 100,
+            opacity: loadingAnim,
+          }}
+        >
+          <BlurView
+            intensity={80}
+            tint="dark"
+            style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+          >
+            <Animated.View
+              style={{
+                transform: [
+                  {
+                    scale: loadingAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.95, 1.08],
+                    }),
+                  },
+                ],
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons
+                name="cloud-upload-outline"
+                size={64}
+                color="#fff"
+                style={{ marginBottom: 24 }}
+              />
+              <Text
+                style={{
+                  color: "#fff",
+                  fontSize: 22,
+                  fontWeight: "bold",
+                  marginBottom: 12,
+                }}
+              >
+                Processing Video...
+              </Text>
+              <Text style={{ color: "#fff", fontSize: 16 }}>
+                Please wait while we process your video.
+              </Text>
+            </Animated.View>
+          </BlurView>
+        </Animated.View>
+      )}
+    </View>
+  );
 };
-
-const GAP = 16;
-const PHONE_HEIGHT = Math.min(height * 0.82, 840);
-const PHONE_WIDTH = Math.min(
-  PHONE_HEIGHT / (19.5 / 9),
-  (width - GAP * 2 - 32) / 3,
-);
-const INNER_RADIUS = 18;
-
-const s = (base: number) => Math.round((PHONE_WIDTH / 260) * base);
-
-const PhoneScreen = ({ category }: { category: Category }) => {
+const PhoneScreen = ({
+  category,
+  videoSource,
+  shouldAutoPlay,
+  setShouldAutoPlay,
+}: {
+  category: Category;
+  videoSource: any;
+  shouldAutoPlay?: boolean;
+  setShouldAutoPlay?: (v: boolean) => void;
+}) => {
   const videoRef = useRef<Video>(null);
   const prevHLId = useRef<string | null>(null);
 
@@ -83,7 +249,6 @@ const PhoneScreen = ({ category }: { category: Category }) => {
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [scrubProgress, setScrubProgress] = useState(0);
 
-
   const { accent, label, icon } = CAT[category];
   const catHL = HIGHLIGHTS.filter((h) => h.category === category);
   const activeHL =
@@ -98,11 +263,14 @@ const PhoneScreen = ({ category }: { category: Category }) => {
       await videoRef.current?.setPositionAsync(
         Math.max(0, (first.start - 1) * 1000),
       );
-      await videoRef.current?.playAsync();
-      setIsPlaying(true);
+      if (shouldAutoPlay) {
+        await videoRef.current?.playAsync();
+        setIsPlaying(true);
+        setShouldAutoPlay && setShouldAutoPlay(false);
+      }
     }, 400);
     return () => clearTimeout(t);
-  }, []);
+  }, [shouldAutoPlay]);
 
   useEffect(() => {
     if (activeHL && activeHL.id !== prevHLId.current) {
@@ -289,7 +457,6 @@ const PhoneScreen = ({ category }: { category: Category }) => {
     outputRange: [0.4, 0.95],
   });
 
-
   return (
     <Animated.View
       style={[
@@ -307,11 +474,11 @@ const PhoneScreen = ({ category }: { category: Category }) => {
       <View style={styles.innerScreen}>
         <Video
           ref={videoRef}
-          source={VIDEO_SOURCE}
+          source={videoSource}
           style={StyleSheet.absoluteFillObject}
           resizeMode={ResizeMode.COVER}
           onPlaybackStatusUpdate={onStatus}
-          shouldPlay={false}
+          shouldPlay={shouldAutoPlay}
           isLooping={false}
           isMuted={isMuted}
         />
@@ -516,8 +683,11 @@ const PhoneScreen = ({ category }: { category: Category }) => {
             </View>
           </View>
 
-          <Text style={[styles.timeTxt, { fontSize: s(9), textAlign: "center" }]}>
-            {fmt(isScrubbing ? scrubProgress * duration : position)} / {fmt(duration)}
+          <Text
+            style={[styles.timeTxt, { fontSize: s(9), textAlign: "center" }]}
+          >
+            {fmt(isScrubbing ? scrubProgress * duration : position)} /{" "}
+            {fmt(duration)}
           </Text>
 
           <View style={styles.actionRow}>
@@ -555,20 +725,7 @@ const PhoneScreen = ({ category }: { category: Category }) => {
   );
 };
 
-const HomeScreen = () => (
-  <View style={styles.root}>
-    <StatusBar
-      barStyle="light-content"
-      translucent
-      backgroundColor="transparent"
-    />
-    <View style={styles.row}>
-      {(["event", "nature", "emotion"] as Category[]).map((cat) => (
-        <PhoneScreen key={cat} category={cat} />
-      ))}
-    </View>
-  </View>
-);
+// Duplicate HomeScreen definition removed — using the primary HomeScreen implementation above.
 
 const styles = StyleSheet.create({
   root: {
