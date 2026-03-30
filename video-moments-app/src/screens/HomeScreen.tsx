@@ -1,7 +1,24 @@
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { BlurView } from "expo-blur";
+import * as DocumentPicker from "expo-document-picker";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  StatusBar,
+  Animated,
+  PanResponder,
+  LayoutChangeEvent,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
+
 // --- Highlight UI constants and types ---
 const GAP = 16;
-const PHONE_HEIGHT = 750; // fixed height
-const PHONE_WIDTH = 350; // fixed width
+const PHONE_HEIGHT = 750;
+const PHONE_WIDTH = 350;
 const INNER_RADIUS = 18;
 const s = (base: number) => Math.round((PHONE_WIDTH / 260) * base);
 
@@ -12,11 +29,12 @@ const GLASS = {
   textMuted: "rgba(255,255,255,0.55)",
 };
 
-const fmt = (s: number) => {
-  const m = Math.floor(s / 60)
+const fmt = (secValue: number) => {
+  const safe = Math.max(0, secValue || 0);
+  const m = Math.floor(safe / 60)
     .toString()
     .padStart(2, "0");
-  const sec = Math.floor(s % 60)
+  const sec = Math.floor(safe % 60)
     .toString()
     .padStart(2, "0");
   return `${m}:${sec}`;
@@ -30,7 +48,12 @@ const CAT: Record<Category, { label: string; icon: string; accent: string }> = {
   emotion: { label: "Emotion", icon: "heart-outline", accent: "#FF6FA1" },
 };
 
-type Highlight = { id: string; category: Category; start: number; end: number };
+type Highlight = {
+  id: string;
+  category: Category;
+  start: number;
+  end: number;
+};
 
 const HIGHLIGHTS: Highlight[] = [
   { id: "e1", category: "event", start: 5, end: 9 },
@@ -40,33 +63,12 @@ const HIGHLIGHTS: Highlight[] = [
   { id: "m1", category: "emotion", start: 21, end: 26 },
   { id: "m2", category: "emotion", start: 50, end: 54 },
 ];
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import { BlurView } from "expo-blur";
-import * as DocumentPicker from "expo-document-picker";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Dimensions,
-  StatusBar,
-  Animated,
-  PanResponder,
-  LayoutChangeEvent,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
-
-const { width, height } = Dimensions.get("window");
-
-const VIDEO_SOURCE = require("../data/birthday_surprise.mp4");
 
 const HomeScreen = () => {
   const [video, setVideo] = useState<any>(
     require("../data/birthday_surprise.mp4"),
   );
-  const [uploading, setUploading] = useState(false);
+  const [uploading] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
   const [shouldAutoPlay, setShouldAutoPlay] = useState(false);
   const loadingAnim = useRef(new Animated.Value(0)).current;
@@ -78,17 +80,21 @@ const HomeScreen = () => {
         copyToCacheDirectory: true,
         multiple: false,
       });
+
       if (res.assets && res.assets[0]?.uri) {
         setShowLoading(true);
+
         Animated.timing(loadingAnim, {
           toValue: 1,
           duration: 400,
           useNativeDriver: true,
         }).start();
+
         setTimeout(() => {
           setShowLoading(false);
           setVideo({ uri: res.assets[0].uri });
           setShouldAutoPlay(true);
+
           Animated.timing(loadingAnim, {
             toValue: 0,
             duration: 400,
@@ -108,18 +114,9 @@ const HomeScreen = () => {
         translucent
         backgroundColor="transparent"
       />
+
       <TouchableOpacity
-        style={{
-          backgroundColor: "#222",
-          borderRadius: 16,
-          paddingVertical: 12,
-          paddingHorizontal: 16,
-          alignItems: "center",
-          justifyContent: "center",
-          borderWidth: 1,
-          borderColor: "#444",
-          marginBottom: 32,
-        }}
+        style={styles.uploadButton}
         onPress={pickVideo}
         disabled={uploading || showLoading}
         activeOpacity={0.8}
@@ -130,24 +127,18 @@ const HomeScreen = () => {
           color="#fff"
           style={{ marginBottom: 16 }}
         />
-        <Text
-          style={{
-            color: "#fff",
-            fontSize: 18,
-            fontWeight: "bold",
-            marginBottom: 8,
-          }}
-        >
+        <Text style={styles.uploadTitle}>
           {showLoading
             ? "Processing..."
             : uploading
             ? "Uploading..."
             : "Upload Video"}
         </Text>
-        <Text style={{ color: "#aaa", fontSize: 14, textAlign: "center" }}>
+        <Text style={styles.uploadSubtitle}>
           Click to select a video file to upload and process highlights.
         </Text>
       </TouchableOpacity>
+
       <View style={styles.row}>
         {(["event", "nature", "emotion"] as Category[]).map((cat) => (
           <PhoneScreen
@@ -159,6 +150,7 @@ const HomeScreen = () => {
           />
         ))}
       </View>
+
       {showLoading && (
         <Animated.View
           style={{
@@ -196,17 +188,8 @@ const HomeScreen = () => {
                 color="#fff"
                 style={{ marginBottom: 24 }}
               />
-              <Text
-                style={{
-                  color: "#fff",
-                  fontSize: 22,
-                  fontWeight: "bold",
-                  marginBottom: 12,
-                }}
-              >
-                Processing Video...
-              </Text>
-              <Text style={{ color: "#fff", fontSize: 16 }}>
+              <Text style={styles.processingTitle}>Processing Video...</Text>
+              <Text style={styles.processingText}>
                 Please wait while we process your video.
               </Text>
             </Animated.View>
@@ -216,6 +199,7 @@ const HomeScreen = () => {
     </View>
   );
 };
+
 const PhoneScreen = ({
   category,
   videoSource,
@@ -239,38 +223,62 @@ const PhoneScreen = ({
   const badgeScale = useRef(new Animated.Value(1)).current;
 
   const headScale = useRef(new Animated.Value(1)).current;
+  const homeIndicatorOpacity = useRef(new Animated.Value(1)).current;
 
   const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState(60);
+  const [duration, setDuration] = useState(0);
+  const durationRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted] = useState(true);
 
-  const trackWidthRef = useRef(1);
+  const trackWidthRef = useRef(PHONE_WIDTH - s(20));
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [scrubProgress, setScrubProgress] = useState(0);
+  const initialScrubX = useRef(0);
+  const initialScrubProgress = useRef(0);
 
   const { accent, label, icon } = CAT[category];
   const catHL = HIGHLIGHTS.filter((h) => h.category === category);
   const activeHL =
     catHL.find((h) => position >= h.start && position <= h.end) ?? null;
+
   const progress = duration > 0 ? position / duration : 0;
   const displayProgress = isScrubbing ? scrubProgress : progress;
+  const safeDuration = duration > 0 ? duration : 1;
 
   useEffect(() => {
     const first = catHL[0];
     if (!first) return;
+
     const t = setTimeout(async () => {
-      await videoRef.current?.setPositionAsync(
-        Math.max(0, (first.start - 1) * 1000),
-      );
-      if (shouldAutoPlay) {
+      // Wait for video to be ready
+      const status = await videoRef.current?.getStatusAsync();
+      if (!status?.isLoaded) {
+        // If not loaded yet, wait a bit more
+        setTimeout(async () => {
+          await videoRef.current?.setPositionAsync(
+            Math.max(0, (first.start - 1) * 1000),
+          );
+          await videoRef.current?.playAsync();
+          setIsPlaying(true);
+        }, 500);
+      } else {
+        // Video is loaded, seek and play immediately
+        await videoRef.current?.setPositionAsync(
+          Math.max(0, (first.start - 1) * 1000),
+        );
         await videoRef.current?.playAsync();
         setIsPlaying(true);
-        setShouldAutoPlay && setShouldAutoPlay(false);
+      }
+
+      // Reset shouldAutoPlay flag after upload
+      if (shouldAutoPlay) {
+        setShouldAutoPlay?.(false);
       }
     }, 400);
+
     return () => clearTimeout(t);
-  }, [shouldAutoPlay]);
+  }, [videoSource, catHL, shouldAutoPlay, setShouldAutoPlay]);
 
   useEffect(() => {
     if (activeHL && activeHL.id !== prevHLId.current) {
@@ -352,29 +360,52 @@ const PhoneScreen = ({
         useNativeDriver: true,
       }).start();
     }
-  }, [activeHL?.id]);
+  }, [
+    activeHL,
+    badgeOpacity,
+    badgeScale,
+    badgeTranslateY,
+    flashAnim,
+    glowAnim,
+    sweepAnim,
+  ]);
+
+  useEffect(() => {
+    Animated.timing(homeIndicatorOpacity, {
+      toValue: isScrubbing ? 1 : isPlaying ? 0.18 : 1,
+      duration: isScrubbing ? 120 : isPlaying ? 450 : 250,
+      useNativeDriver: true,
+    }).start();
+  }, [isScrubbing, isPlaying, homeIndicatorOpacity]);
 
   const onStatus = useCallback((st: AVPlaybackStatus) => {
     if (!st.isLoaded) return;
+
     setPosition(st.positionMillis / 1000);
-    if (st.durationMillis) setDuration(st.durationMillis / 1000);
-    if (st.didJustFinish) setIsPlaying(false);
+    const newDuration = (st.durationMillis ?? 0) / 1000;
+    setDuration(newDuration);
+    durationRef.current = newDuration;
+    setIsPlaying(st.isPlaying);
+
+    if (st.didJustFinish) {
+      setIsPlaying(false);
+    }
   }, []);
 
   const togglePlay = async () => {
-    if (isPlaying) await videoRef.current?.pauseAsync();
-    else await videoRef.current?.playAsync();
-    setIsPlaying((p) => !p);
-  };
-
-  const seekTo = async (seconds: number) => {
-    const next = Math.max(0, Math.min(seconds, duration));
-    await videoRef.current?.setPositionAsync(next * 1000);
+    if (isPlaying) {
+      await videoRef.current?.pauseAsync();
+      setIsPlaying(false);
+    } else {
+      await videoRef.current?.playAsync();
+      setIsPlaying(true);
+    }
   };
 
   const seekAndPlay = async (seconds: number) => {
-    const next = Math.max(0, Math.min(seconds, duration));
-    await videoRef.current?.setPositionAsync(next * 1000);
+    if (durationRef.current <= 0) return;
+    const clampedSeconds = Math.max(0, Math.min(seconds, durationRef.current));
+    await videoRef.current?.setPositionAsync(clampedSeconds * 1000);
     await videoRef.current?.playAsync();
     setIsPlaying(true);
   };
@@ -383,21 +414,27 @@ const PhoneScreen = ({
     trackWidthRef.current = e.nativeEvent.layout.width;
   };
 
-  const ratioFromX = (x: number) => {
+  const ratioFromLocationX = (locationX: number) => {
     const w = trackWidthRef.current;
     if (w <= 1) return 0;
-    return Math.max(0, Math.min(x / w, 1));
+    return Math.max(0, Math.min(locationX / w, 1));
   };
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => durationRef.current > 1, // Only allow scrubbing if video is loaded
+      onMoveShouldSetPanResponder: () => durationRef.current > 1,
 
       onPanResponderGrant: (evt) => {
-        const ratio = ratioFromX(evt.nativeEvent.locationX);
+        if (durationRef.current <= 1) return; // Safety check
+        const ratio = ratioFromLocationX(evt.nativeEvent.locationX);
         setIsScrubbing(true);
         setScrubProgress(ratio);
+        initialScrubX.current = evt.nativeEvent.locationX;
+        initialScrubProgress.current = ratio;
+
+        // Pause video while scrubbing
+        videoRef.current?.pauseAsync();
 
         Animated.spring(headScale, {
           toValue: 1.18,
@@ -407,13 +444,26 @@ const PhoneScreen = ({
         }).start();
       },
 
-      onPanResponderMove: (evt) => {
-        const ratio = ratioFromX(evt.nativeEvent.locationX);
+      onPanResponderMove: (evt, gestureState) => {
+        if (durationRef.current <= 1) return; // Safety check
+        // Calculate new position based on initial position + gesture movement
+        const newX = initialScrubX.current + gestureState.dx;
+        const ratio = ratioFromLocationX(newX);
         setScrubProgress(ratio);
+
+        // Update video position in real-time while scrubbing
+        const seconds = ratio * durationRef.current;
+        videoRef.current?.setPositionAsync(
+          Math.max(0, Math.min(seconds * 1000, durationRef.current * 1000)),
+        );
       },
 
-      onPanResponderRelease: async (evt) => {
-        const ratio = ratioFromX(evt.nativeEvent.locationX);
+      onPanResponderRelease: async (evt, gestureState) => {
+        if (durationRef.current <= 1) return; // Safety check
+        const newX = initialScrubX.current + gestureState.dx;
+        const ratio = ratioFromLocationX(newX);
+        const seconds = ratio * durationRef.current;
+
         setScrubProgress(ratio);
         setIsScrubbing(false);
 
@@ -424,11 +474,20 @@ const PhoneScreen = ({
           useNativeDriver: true,
         }).start();
 
-        await seekAndPlay(ratio * duration);
+        // Seek to final position and play
+        await videoRef.current?.setPositionAsync(
+          Math.max(0, Math.min(seconds * 1000, durationRef.current * 1000)),
+        );
+        await videoRef.current?.playAsync();
+        setIsPlaying(true);
       },
 
-      onPanResponderTerminate: async (evt) => {
-        const ratio = ratioFromX(evt.nativeEvent.locationX);
+      onPanResponderTerminate: async (evt, gestureState) => {
+        if (durationRef.current <= 1) return; // Safety check
+        const newX = initialScrubX.current + gestureState.dx;
+        const ratio = ratioFromLocationX(newX);
+        const seconds = ratio * durationRef.current;
+
         setScrubProgress(ratio);
         setIsScrubbing(false);
 
@@ -439,7 +498,12 @@ const PhoneScreen = ({
           useNativeDriver: true,
         }).start();
 
-        await seekAndPlay(ratio * duration);
+        // Seek to final position and play
+        await videoRef.current?.setPositionAsync(
+          Math.max(0, Math.min(seconds * 1000, durationRef.current * 1000)),
+        );
+        await videoRef.current?.playAsync();
+        setIsPlaying(true);
       },
     }),
   ).current;
@@ -448,10 +512,12 @@ const PhoneScreen = ({
     inputRange: [0, 1],
     outputRange: ["rgba(255,255,255,0.12)", accent],
   });
+
   const shadowRadius = glowAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [8, 28],
   });
+
   const shadowOpacity = glowAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0.4, 0.95],
@@ -579,8 +645,6 @@ const PhoneScreen = ({
           </LinearGradient>
         </Animated.View>
 
-        {/* Example top controls incl. back button */}
-        {/* ── Phone status bar: time · wifi · battery ── */}
         <View style={styles.statusBar} pointerEvents="none">
           <Text style={[styles.statusTime, { fontSize: s(9) }]}>09:41</Text>
           <View style={styles.statusIcons}>
@@ -593,7 +657,6 @@ const PhoneScreen = ({
           </View>
         </View>
 
-        {/* ── Video date + back/menu controls ── */}
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.topIconBtn} activeOpacity={0.75}>
             <Ionicons name="arrow-back" size={s(13)} color="#fff" />
@@ -608,28 +671,28 @@ const PhoneScreen = ({
           </TouchableOpacity>
         </View>
 
-        {/* Tap area — play/pause */}
-        <TouchableOpacity
-          style={StyleSheet.absoluteFillObject}
-          onPress={togglePlay}
-          activeOpacity={1}
-        >
-          {!isPlaying && (
-            <View style={styles.playBtnWrap}>
-              <View style={styles.playBtn}>
-                <Ionicons
-                  name="play"
-                  size={s(16)}
-                  color="#fff"
-                  style={{ marginLeft: s(2) }}
-                />
+        <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            onPress={togglePlay}
+            activeOpacity={1}
+          >
+            {!isPlaying && (
+              <View style={styles.playBtnWrap} pointerEvents="none">
+                <View style={styles.playBtn}>
+                  <Ionicons
+                    name="play"
+                    size={s(16)}
+                    color="#fff"
+                    style={{ marginLeft: s(2) }}
+                  />
+                </View>
               </View>
-            </View>
-          )}
-        </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.bottomBar}>
-          {/* Progress bar */}
           <View
             style={styles.trackTouch}
             onLayout={onTrackLayout}
@@ -637,6 +700,7 @@ const PhoneScreen = ({
           >
             <View style={styles.track}>
               <View style={styles.trackBg} />
+
               <View
                 style={[
                   styles.fill,
@@ -646,12 +710,14 @@ const PhoneScreen = ({
                   },
                 ]}
               />
+
               {HIGHLIGHTS.map((h) => {
                 const segAccent = CAT[h.category].accent;
-                const l = (h.start / duration) * 100;
-                const w = ((h.end - h.start) / duration) * 100;
+                const l = (h.start / safeDuration) * 100;
+                const w = ((h.end - h.start) / safeDuration) * 100;
                 const curr = h === activeHL;
                 const thisCat = h.category === category;
+
                 return (
                   <View
                     key={h.id}
@@ -670,6 +736,7 @@ const PhoneScreen = ({
                   />
                 );
               })}
+
               <Animated.View
                 style={[
                   styles.playhead,
@@ -720,15 +787,22 @@ const PhoneScreen = ({
             ))}
           </View>
         </View>
-        <View style={styles.homeIndicatorWrap} pointerEvents="none">
+
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.homeIndicatorWrap,
+            {
+              opacity: homeIndicatorOpacity,
+            },
+          ]}
+        >
           <View style={styles.homeIndicator} />
-        </View>
+        </Animated.View>
       </View>
     </Animated.View>
   );
 };
-
-// Duplicate HomeScreen definition removed — using the primary HomeScreen implementation above.
 
 const styles = StyleSheet.create({
   root: {
@@ -737,25 +811,45 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
+  uploadButton: {
+    backgroundColor: "#222",
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#444",
+    marginBottom: 32,
+  },
+  uploadTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 8,
+  },
+  uploadSubtitle: {
+    color: "#aaa",
+    fontSize: 14,
+    textAlign: "center",
+  },
+  processingTitle: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "bold",
+    marginBottom: 12,
+  },
+  processingText: {
+    color: "#fff",
+    fontSize: 16,
+  },
+
   row: {
     flexDirection: "row",
     gap: GAP,
     paddingHorizontal: 16,
     alignItems: "center",
-  },
-  homeIndicatorWrap: {
-    position: "absolute",
-    bottom: 3,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    zIndex: 50,
-  },
-  homeIndicator: {
-    width: s(60),
-    height: s(4),
-    borderRadius: s(2),
-    backgroundColor: "rgba(255,255,255,0.35)",
   },
 
   deviceFrame: {
@@ -767,6 +861,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     shadowOffset: { width: 0, height: 0 },
   },
+
   punchHole: {
     position: "absolute",
     top: 10,
@@ -777,6 +872,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#060606",
     zIndex: 50,
   },
+
   innerScreen: {
     flex: 1,
     borderRadius: INNER_RADIUS,
@@ -784,7 +880,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
   },
 
-  // Phone OS status bar
   statusBar: {
     position: "absolute",
     top: 0,
@@ -808,7 +903,6 @@ const styles = StyleSheet.create({
     gap: s(4),
   },
 
-  // Video overlay controls + date
   topBar: {
     position: "absolute",
     top: s(22),
@@ -833,10 +927,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.12)",
     alignItems: "center",
     justifyContent: "center",
-  },
-  topRight: {
-    flexDirection: "row",
-    gap: s(6),
   },
 
   sweepWrap: {
@@ -902,31 +992,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  thumb: {
-    width: s(52),
-    height: s(36),
-    borderRadius: s(8),
-    borderWidth: 1,
-    overflow: "hidden",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.55)",
-    gap: s(3),
-  },
-  thumbRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: s(6),
-  },
-  thumbScrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.38)",
-  },
-  thumbTime: {
-    fontWeight: "700",
-    letterSpacing: 0.2,
-  },
-
   bottomBar: {
     position: "absolute",
     bottom: 0,
@@ -942,13 +1007,6 @@ const styles = StyleSheet.create({
     zIndex: 15,
   },
 
-  timelineOverlay: {
-    position: "absolute",
-    left: s(10),
-    right: s(10),
-    top: "50%",
-    zIndex: 20,
-  },
   trackTouch: {
     paddingVertical: s(8),
     justifyContent: "center",
@@ -991,20 +1049,10 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
   },
 
-  controlRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
   timeTxt: {
     color: GLASS.textMuted,
     fontWeight: "700",
     letterSpacing: 0.2,
-  },
-  muteBtn: {
-    minWidth: s(22),
-    alignItems: "center",
-    justifyContent: "center",
   },
 
   actionRow: {
@@ -1021,6 +1069,21 @@ const styles = StyleSheet.create({
     borderColor: GLASS.borderWhite,
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  homeIndicatorWrap: {
+    position: "absolute",
+    bottom: 4,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 50,
+  },
+  homeIndicator: {
+    width: s(60),
+    height: s(4),
+    borderRadius: s(2),
+    backgroundColor: "rgba(255,255,255,0.85)",
   },
 });
 
