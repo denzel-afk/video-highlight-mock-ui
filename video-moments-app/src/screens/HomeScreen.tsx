@@ -1,7 +1,7 @@
 // --- Highlight UI constants and types ---
 const GAP = 16;
-const PHONE_HEIGHT = 850; // fixed height
-const PHONE_WIDTH = 400; // fixed width
+const PHONE_HEIGHT = 750; // fixed height
+const PHONE_WIDTH = 350; // fixed width
 const INNER_RADIUS = 18;
 const s = (base: number) => Math.round((PHONE_WIDTH / 260) * base);
 
@@ -112,8 +112,8 @@ const HomeScreen = () => {
         style={{
           backgroundColor: "#222",
           borderRadius: 16,
-          paddingVertical: 32,
-          paddingHorizontal: 40,
+          paddingVertical: 12,
+          paddingHorizontal: 16,
           alignItems: "center",
           justifyContent: "center",
           borderWidth: 1,
@@ -720,6 +720,9 @@ const PhoneScreen = ({
             ))}
           </View>
         </View>
+        <View style={styles.homeIndicatorWrap} pointerEvents="none">
+          <View style={styles.homeIndicator} />
+        </View>
       </View>
     </Animated.View>
   );
@@ -739,6 +742,20 @@ const styles = StyleSheet.create({
     gap: GAP,
     paddingHorizontal: 16,
     alignItems: "center",
+  },
+  homeIndicatorWrap: {
+    position: "absolute",
+    bottom: 3,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 50,
+  },
+  homeIndicator: {
+    width: s(60),
+    height: s(4),
+    borderRadius: s(2),
+    backgroundColor: "rgba(255,255,255,0.35)",
   },
 
   deviceFrame: {
