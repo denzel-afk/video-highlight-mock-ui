@@ -14,9 +14,13 @@ const App = () => {
         <Stack.Screen
           name="Home"
           component={HomeScreen}
-          options={{ title: "Trinity Highlights" }}
+          options={{ headerShown: false }}
         />
-        <Stack.Screen name="VideoDetail" component={VideoDetailScreen} />
+        <Stack.Screen
+          name="VideoDetail"
+          component={VideoDetailScreen}
+          options={{ headerShown: false }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

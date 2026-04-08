@@ -68,6 +68,8 @@ const HomeScreen = () => {
   const [video, setVideo] = useState<any>(
     require("../data/birthday_surprise.mp4"),
   );
+  const [viewMode, setViewMode] = useState<"web" | "phone">("web");
+  const [phoneStep, setPhoneStep] = useState<"upload" | "view">("upload");
   const [uploading] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
   const [shouldAutoPlay, setShouldAutoPlay] = useState(false);
@@ -94,6 +96,8 @@ const HomeScreen = () => {
           setShowLoading(false);
           setVideo({ uri: res.assets[0].uri });
           setShouldAutoPlay(true);
+          // If user is in phone mode, move to the view step
+          setPhoneStep("view");
 
           Animated.timing(loadingAnim, {
             toValue: 0,
@@ -115,41 +119,120 @@ const HomeScreen = () => {
         backgroundColor="transparent"
       />
 
-      <TouchableOpacity
-        style={styles.uploadButton}
-        onPress={pickVideo}
-        disabled={uploading || showLoading}
-        activeOpacity={0.8}
-      >
-        <Ionicons
-          name="cloud-upload-outline"
-          size={48}
-          color="#fff"
-          style={{ marginBottom: 16 }}
-        />
-        <Text style={styles.uploadTitle}>
-          {showLoading
-            ? "Processing..."
-            : uploading
-            ? "Uploading..."
-            : "Upload Video"}
-        </Text>
-        <Text style={styles.uploadSubtitle}>
-          Click to select a video file to upload and process highlights.
-        </Text>
-      </TouchableOpacity>
+      {viewMode !== "phone" && (
+        <TouchableOpacity
+          style={styles.uploadButton}
+          onPress={pickVideo}
+          disabled={uploading || showLoading}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="cloud-upload-outline"
+            size={48}
+            color="#fff"
+            style={{ marginBottom: 16 }}
+          />
+          <Text style={styles.uploadTitle}>
+            {showLoading
+              ? "Processing..."
+              : uploading
+              ? "Uploading..."
+              : "Upload Video"}
+          </Text>
+          <Text style={styles.uploadSubtitle}>
+            Click to select a video file to upload and process highlights.
+          </Text>
+        </TouchableOpacity>
+      )}
 
-      <View style={styles.row}>
-        {(["event", "nature", "emotion"] as Category[]).map((cat) => (
+      {/* Floating mode toggle (overlay above video) */}
+      <View style={styles.modeToggleOverlay}>
+        <TouchableOpacity
+          onPress={() => setViewMode("web")}
+          style={[
+            styles.modeBtn,
+            viewMode === "web" ? styles.modeBtnActive : undefined,
+          ]}
+          activeOpacity={0.8}
+        >
+          <Text
+            style={viewMode === "web" ? styles.modeTxtActive : styles.modeTxt}
+          >
+            Web
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => setViewMode("phone")}
+          style={[
+            styles.modeBtn,
+            viewMode === "phone" ? styles.modeBtnActive : undefined,
+          ]}
+          activeOpacity={0.8}
+        >
+          <Text
+            style={viewMode === "phone" ? styles.modeTxtActive : styles.modeTxt}
+          >
+            Phone
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {viewMode === "web" ? (
+        <View style={styles.row}>
+          {(["event", "nature", "emotion"] as Category[]).map((cat) => (
+            <PhoneScreen
+              key={cat}
+              category={cat}
+              videoSource={video}
+              shouldAutoPlay={shouldAutoPlay}
+              setShouldAutoPlay={setShouldAutoPlay}
+            />
+          ))}
+        </View>
+      ) : phoneStep === "upload" ? (
+        <View style={styles.phoneFullWrap}>
+          <View style={styles.fullDeviceFrame}>
+            <View
+              style={[
+                styles.innerScreen,
+                styles.innerScreenFull,
+                styles.phoneUploadCenter,
+              ]}
+            >
+              <TouchableOpacity
+                style={[styles.uploadButton, styles.phoneUploadCard]}
+                onPress={pickVideo}
+                disabled={uploading || showLoading}
+                activeOpacity={0.9}
+              >
+                <Ionicons
+                  name="cloud-upload-outline"
+                  size={40}
+                  color="#fff"
+                  style={{ marginBottom: 12 }}
+                />
+                <Text style={styles.uploadTitle}>Upload Video from Files</Text>
+                <Text style={styles.uploadSubtitle}>
+                  Select a video file to analyze highlights and open
+                  full-screen.
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ) : (
+        // Phone mode - step 2: show full-screen phone view
+        <View style={styles.phoneFullWrap}>
           <PhoneScreen
-            key={cat}
-            category={cat}
+            category={"all" as any}
             videoSource={video}
             shouldAutoPlay={shouldAutoPlay}
             setShouldAutoPlay={setShouldAutoPlay}
+            onBack={() => setPhoneStep("upload")}
           />
-        ))}
-      </View>
+        </View>
+      )}
 
       {showLoading && (
         <Animated.View
@@ -205,11 +288,13 @@ const PhoneScreen = ({
   videoSource,
   shouldAutoPlay,
   setShouldAutoPlay,
+  onBack,
 }: {
-  category: Category;
+  category: Category | "all";
   videoSource: any;
   shouldAutoPlay?: boolean;
   setShouldAutoPlay?: (v: boolean) => void;
+  onBack?: () => void;
 }) => {
   const videoRef = useRef<Video>(null);
   const prevHLId = useRef<string | null>(null);
@@ -237,10 +322,25 @@ const PhoneScreen = ({
   const initialScrubX = useRef(0);
   const initialScrubProgress = useRef(0);
 
-  const { accent, label, icon } = CAT[category];
-  const catHL = HIGHLIGHTS.filter((h) => h.category === category);
+  const { accent, label, icon } =
+    category === "all"
+      ? { accent: "#8FA8FF", label: "Highlights", icon: "albums-outline" }
+      : CAT[category];
+  const catHL =
+    category === "all"
+      ? HIGHLIGHTS
+      : HIGHLIGHTS.filter((h) => h.category === category);
   const activeHL =
     catHL.find((h) => position >= h.start && position <= h.end) ?? null;
+
+  // If we're in 'all' (phone) mode and an active highlight exists,
+  // use that highlight's category for badge/icon/accent so description follows the active segment.
+  const displayAccent =
+    category === "all" && activeHL ? CAT[activeHL.category].accent : accent;
+  const displayLabel =
+    category === "all" && activeHL ? CAT[activeHL.category].label : label;
+  const displayIcon =
+    category === "all" && activeHL ? CAT[activeHL.category].icon : icon;
 
   const progress = duration > 0 ? position / duration : 0;
   const displayProgress = isScrubbing ? scrubProgress : progress;
@@ -378,19 +478,26 @@ const PhoneScreen = ({
     }).start();
   }, [isScrubbing, isPlaying, homeIndicatorOpacity]);
 
-  const onStatus = useCallback((st: AVPlaybackStatus) => {
-    if (!st.isLoaded) return;
+  const onStatus = useCallback(
+    (st: AVPlaybackStatus) => {
+      if (!st.isLoaded) return;
 
-    setPosition(st.positionMillis / 1000);
-    const newDuration = (st.durationMillis ?? 0) / 1000;
-    setDuration(newDuration);
-    durationRef.current = newDuration;
-    setIsPlaying(st.isPlaying);
+      setPosition(st.positionMillis / 1000);
+      const newDuration = (st.durationMillis ?? 0) / 1000;
+      setDuration(newDuration);
+      durationRef.current = newDuration;
 
-    if (st.didJustFinish) {
-      setIsPlaying(false);
-    }
-  }, []);
+      // Only update isPlaying from video status, not when scrubbing
+      if (!isScrubbing) {
+        setIsPlaying(st.isPlaying);
+      }
+
+      if (st.didJustFinish) {
+        setIsPlaying(false);
+      }
+    },
+    [isScrubbing],
+  );
 
   const togglePlay = async () => {
     if (isPlaying) {
@@ -510,7 +617,7 @@ const PhoneScreen = ({
 
   const borderColor = glowAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["rgba(255,255,255,0.12)", accent],
+    outputRange: ["rgba(255,255,255,0.12)", displayAccent],
   });
 
   const shadowRadius = glowAnim.interpolate({
@@ -526,18 +633,35 @@ const PhoneScreen = ({
   return (
     <Animated.View
       style={[
-        styles.deviceFrame,
+        category === "all" ? styles.fullDeviceFrame : styles.deviceFrame,
         {
           borderColor,
-          shadowColor: accent,
-          shadowRadius,
-          shadowOpacity,
+          shadowColor: displayAccent,
+          shadowRadius: category === "all" ? 0 : shadowRadius,
+          shadowOpacity: category === "all" ? 0 : shadowOpacity,
         },
       ]}
     >
-      <View style={styles.punchHole} />
+      {category !== "all" && <View style={styles.punchHole} />}
 
-      <View style={styles.innerScreen}>
+      {category === "all" && (
+        <View style={styles.fullTopBar} pointerEvents="box-none">
+          <TouchableOpacity
+            style={styles.fullTopBtn}
+            onPress={() => onBack?.()}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="arrow-back" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View
+        style={[
+          styles.innerScreen,
+          category === "all" ? styles.innerScreenFull : undefined,
+        ]}
+      >
         <Video
           ref={videoRef}
           source={videoSource}
@@ -561,7 +685,7 @@ const PhoneScreen = ({
           style={[
             StyleSheet.absoluteFillObject,
             {
-              backgroundColor: accent,
+              backgroundColor: displayAccent,
               opacity: flashAnim.interpolate({
                 inputRange: [0, 1],
                 outputRange: [0, 0.22],
@@ -604,93 +728,107 @@ const PhoneScreen = ({
           />
         </Animated.View>
 
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.badgeAnchor,
-            {
-              opacity: badgeOpacity,
-              transform: [
-                { translateY: badgeTranslateY },
-                { scale: badgeScale },
-              ],
-            },
-          ]}
-        >
-          <LinearGradient
-            colors={["rgba(0,0,0,0.76)", "rgba(20,20,28,0.62)"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.centerBadge, { borderColor: accent }]}
+        {/* Center badge: show active highlight's label and time range */}
+        {activeHL && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.badgeAnchor,
+              {
+                opacity: badgeOpacity,
+                transform: [
+                  { translateY: badgeTranslateY },
+                  { scale: badgeScale },
+                ],
+              },
+            ]}
           >
-            <View
-              style={[
-                styles.centerBadgeIconWrap,
-                { backgroundColor: `${accent}20` },
-              ]}
+            <LinearGradient
+              colors={["rgba(0,0,0,0.76)", "rgba(20,20,28,0.62)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.centerBadge, { borderColor: displayAccent }]}
             >
-              <Ionicons name={icon as any} size={s(15)} color={accent} />
-            </View>
-
-            <View>
-              <Text
+              <View
                 style={[
-                  styles.centerBadgeTitle,
-                  { color: accent, fontSize: s(12) },
+                  styles.centerBadgeIconWrap,
+                  { backgroundColor: `${displayAccent}20` },
                 ]}
               >
-                {label} Highlight
-              </Text>
-            </View>
-          </LinearGradient>
-        </Animated.View>
-
-        <View style={styles.statusBar} pointerEvents="none">
-          <Text style={[styles.statusTime, { fontSize: s(9) }]}>09:41</Text>
-          <View style={styles.statusIcons}>
-            <Ionicons name="wifi" size={s(10)} color="rgba(255,255,255,0.85)" />
-            <Ionicons
-              name="battery-half"
-              size={s(11)}
-              color="rgba(255,255,255,0.85)"
-            />
-          </View>
-        </View>
-
-        <View style={styles.topBar}>
-          <TouchableOpacity style={styles.topIconBtn} activeOpacity={0.75}>
-            <Ionicons name="arrow-back" size={s(13)} color="#fff" />
-          </TouchableOpacity>
-
-          <Text style={[styles.videoDate, { fontSize: s(9) }]}>
-            ★ Fri, 27 Mar 2026
-          </Text>
-
-          <TouchableOpacity style={styles.topIconBtn} activeOpacity={0.75}>
-            <Ionicons name="ellipsis-horizontal" size={s(13)} color="#fff" />
-          </TouchableOpacity>
-        </View>
-
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
-          <TouchableOpacity
-            style={StyleSheet.absoluteFillObject}
-            onPress={togglePlay}
-            activeOpacity={1}
-          >
-            {!isPlaying && (
-              <View style={styles.playBtnWrap} pointerEvents="none">
-                <View style={styles.playBtn}>
-                  <Ionicons
-                    name="play"
-                    size={s(16)}
-                    color="#fff"
-                    style={{ marginLeft: s(2) }}
-                  />
-                </View>
+                <Ionicons
+                  name={displayIcon as any}
+                  size={s(15)}
+                  color={displayAccent}
+                />
               </View>
-            )}
-          </TouchableOpacity>
-        </View>
+
+              <View>
+                <Text
+                  style={[
+                    styles.centerBadgeTitle,
+                    { color: displayAccent, fontSize: s(12) },
+                  ]}
+                >
+                  {displayLabel} Highlight
+                </Text>
+              </View>
+            </LinearGradient>
+          </Animated.View>
+        )}
+
+        {category !== "all" && (
+          <View style={styles.statusBar} pointerEvents="none">
+            <Text style={[styles.statusTime, { fontSize: s(9) }]}>09:41</Text>
+            <View style={styles.statusIcons}>
+              <Ionicons
+                name="wifi"
+                size={s(10)}
+                color="rgba(255,255,255,0.85)"
+              />
+              <Ionicons
+                name="battery-half"
+                size={s(11)}
+                color="rgba(255,255,255,0.85)"
+              />
+            </View>
+          </View>
+        )}
+
+        {category !== "all" && (
+          <View style={styles.topBar}>
+            <TouchableOpacity style={styles.topIconBtn} activeOpacity={0.75}>
+              <Ionicons name="arrow-back" size={s(13)} color="#fff" />
+            </TouchableOpacity>
+
+            <Text style={[styles.videoDate, { fontSize: s(9) }]}>
+              ★ Fri, 27 Mar 2026
+            </Text>
+
+            <TouchableOpacity style={styles.topIconBtn} activeOpacity={0.75}>
+              <Ionicons name="ellipsis-horizontal" size={s(13)} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Tap area — play/pause */}
+        <TouchableOpacity
+          style={StyleSheet.absoluteFillObject}
+          onPress={togglePlay}
+          activeOpacity={1}
+        >
+          {!isPlaying && (
+            <View style={styles.playBtnWrap}>
+              <View style={styles.playBtn}>
+                <Ionicons
+                  name="play"
+                  size={s(16)}
+                  color="#fff"
+                  style={{ marginLeft: s(2) }}
+                />
+              </View>
+            </View>
+          )}
+        </TouchableOpacity>
 
         <View style={styles.bottomBar}>
           <View
@@ -716,7 +854,11 @@ const PhoneScreen = ({
                 const l = (h.start / safeDuration) * 100;
                 const w = ((h.end - h.start) / safeDuration) * 100;
                 const curr = h === activeHL;
-                const thisCat = h.category === category;
+                // If in "all" mode, show all segments with higher baseline opacity
+                const thisCat =
+                  category === "all" ? true : h.category === category;
+                const baseOpacity = category === "all" ? 0.72 : 0.15;
+                const focusedCatOpacity = category === "all" ? 0.95 : 0.65;
 
                 return (
                   <View
@@ -727,9 +869,13 @@ const PhoneScreen = ({
                         left: `${l}%`,
                         width: `${w}%`,
                         backgroundColor: segAccent,
-                        opacity: curr ? 1 : thisCat ? 0.65 : 0.15,
-                        height: curr ? 6 : 4,
-                        bottom: curr ? 0 : 1,
+                        opacity: curr
+                          ? 1
+                          : thisCat
+                          ? focusedCatOpacity
+                          : baseOpacity,
+                        height: curr ? 6 : thisCat ? 5 : 4,
+                        bottom: curr ? 0 : thisCat ? 0 : 1,
                         borderRadius: 2,
                       },
                     ]}
@@ -788,17 +934,19 @@ const PhoneScreen = ({
           </View>
         </View>
 
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.homeIndicatorWrap,
-            {
-              opacity: homeIndicatorOpacity,
-            },
-          ]}
-        >
-          <View style={styles.homeIndicator} />
-        </Animated.View>
+        {category !== "all" && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.homeIndicatorWrap,
+              {
+                opacity: homeIndicatorOpacity,
+              },
+            ]}
+          >
+            <View style={styles.homeIndicator} />
+          </Animated.View>
+        )}
       </View>
     </Animated.View>
   );
@@ -828,6 +976,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     marginBottom: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
   uploadSubtitle: {
     color: "#aaa",
@@ -1084,6 +1234,90 @@ const styles = StyleSheet.create({
     height: s(4),
     borderRadius: s(2),
     backgroundColor: "rgba(255,255,255,0.85)",
+  },
+  phoneUploadCenter: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  phoneUploadCard: {
+    width: "88%",
+    marginBottom: 0,
+  },
+  modeToggleWrap: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
+  },
+  modeBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  modeBtnActive: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  modeTxt: {
+    color: "rgba(255,255,255,0.65)",
+    fontWeight: "700",
+  },
+  modeTxtActive: {
+    color: "#fff",
+    fontWeight: "800",
+  },
+  modeToggleOverlay: {
+    position: "absolute",
+    top: 20,
+    right: 12,
+    zIndex: 30,
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  fullDeviceFrame: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#111",
+    borderRadius: 0,
+    padding: 0,
+    zIndex: 15,
+  },
+
+  fullTopBar: {
+    position: "absolute",
+    top: 16,
+    left: 12,
+    right: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    zIndex: 20,
+  },
+  fullTopBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.28)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  phoneFullWrap: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+    alignSelf: "stretch",
+    paddingHorizontal: 0,
+    alignItems: "stretch",
+    justifyContent: "flex-start",
+  },
+  innerScreenFull: {
+    borderRadius: 0,
   },
 });
 
