@@ -68,7 +68,6 @@ const HomeScreen = () => {
   const [video, setVideo] = useState<any>(
     require("../data/birthday_surprise.mp4"),
   );
-  const [viewMode, setViewMode] = useState<"web" | "phone">("web");
   const [phoneStep, setPhoneStep] = useState<"upload" | "view">("upload");
   const [uploading] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
@@ -119,78 +118,7 @@ const HomeScreen = () => {
         backgroundColor="transparent"
       />
 
-      {viewMode !== "phone" && (
-        <TouchableOpacity
-          style={styles.uploadButton}
-          onPress={pickVideo}
-          disabled={uploading || showLoading}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name="cloud-upload-outline"
-            size={48}
-            color="#fff"
-            style={{ marginBottom: 16 }}
-          />
-          <Text style={styles.uploadTitle}>
-            {showLoading
-              ? "Processing..."
-              : uploading
-              ? "Uploading..."
-              : "Upload Video"}
-          </Text>
-          <Text style={styles.uploadSubtitle}>
-            Click to select a video file to upload and process highlights.
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Floating mode toggle (overlay above video) */}
-      <View style={styles.modeToggleOverlay}>
-        <TouchableOpacity
-          onPress={() => setViewMode("web")}
-          style={[
-            styles.modeBtn,
-            viewMode === "web" ? styles.modeBtnActive : undefined,
-          ]}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={viewMode === "web" ? styles.modeTxtActive : styles.modeTxt}
-          >
-            Web
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => setViewMode("phone")}
-          style={[
-            styles.modeBtn,
-            viewMode === "phone" ? styles.modeBtnActive : undefined,
-          ]}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={viewMode === "phone" ? styles.modeTxtActive : styles.modeTxt}
-          >
-            Phone
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {viewMode === "web" ? (
-        <View style={styles.row}>
-          {(["event", "nature", "emotion"] as Category[]).map((cat) => (
-            <PhoneScreen
-              key={cat}
-              category={cat}
-              videoSource={video}
-              shouldAutoPlay={shouldAutoPlay}
-              setShouldAutoPlay={setShouldAutoPlay}
-            />
-          ))}
-        </View>
-      ) : phoneStep === "upload" ? (
+      {phoneStep === "upload" ? (
         <View style={styles.phoneFullWrap}>
           <View style={styles.fullDeviceFrame}>
             <View
@@ -315,6 +243,8 @@ const PhoneScreen = ({
   const durationRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted] = useState(true);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
 
   const trackWidthRef = useRef(PHONE_WIDTH - s(20));
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -481,6 +411,21 @@ const PhoneScreen = ({
   const onStatus = useCallback(
     (st: AVPlaybackStatus) => {
       if (!st.isLoaded) return;
+      // Capture natural video size (if available) so we can compute a fitted layout
+      // NOTE: AVPlaybackStatus may expose `naturalSize` on the status object.
+      const anySt = st as any;
+      // Try a couple of known shapes where natural size might be provided
+      const foundWidth =
+        anySt.naturalSize?.width ??
+        anySt.naturalSize?.naturalWidth ??
+        anySt.naturalSize?.w;
+      const foundHeight =
+        anySt.naturalSize?.height ??
+        anySt.naturalSize?.naturalHeight ??
+        anySt.naturalSize?.h;
+      if (foundWidth && foundHeight) {
+        setNaturalSize({ width: foundWidth, height: foundHeight });
+      }
 
       setPosition(st.positionMillis / 1000);
       const newDuration = (st.durationMillis ?? 0) / 1000;
@@ -661,17 +606,73 @@ const PhoneScreen = ({
           styles.innerScreen,
           category === "all" ? styles.innerScreenFull : undefined,
         ]}
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          setContainerSize({ width, height });
+        }}
       >
-        <Video
-          ref={videoRef}
-          source={videoSource}
-          style={StyleSheet.absoluteFillObject}
-          resizeMode={ResizeMode.COVER}
-          onPlaybackStatusUpdate={onStatus}
-          shouldPlay={shouldAutoPlay}
-          isLooping={false}
-          isMuted={isMuted}
-        />
+        {/* Compute fitted video size to preserve aspect ratio and always fit inside container */}
+        {(() => {
+          const cw = containerSize.width || PHONE_WIDTH;
+          const ch = containerSize.height || PHONE_HEIGHT;
+          const nw = naturalSize.width || 16;
+          const nh = naturalSize.height || 9;
+
+          // If we don't know natural size yet, fallback to cover/absoluteFill
+          if (!naturalSize.width || !naturalSize.height) {
+            return (
+              <Video
+                ref={videoRef}
+                source={videoSource}
+                style={StyleSheet.absoluteFillObject}
+                resizeMode={ResizeMode.CONTAIN}
+                onPlaybackStatusUpdate={onStatus}
+                shouldPlay={shouldAutoPlay}
+                isLooping={false}
+                isMuted={isMuted}
+              />
+            );
+          }
+
+          // Compute scale to fit
+          const containerRatio = cw / ch;
+          const videoRatio = nw / nh;
+          let vw = cw;
+          let vh = ch;
+
+          if (videoRatio > containerRatio) {
+            // video is wider -> fit by width
+            vw = cw;
+            vh = Math.round(cw / videoRatio);
+          } else {
+            // video is taller -> fit by height
+            vh = ch;
+            vw = Math.round(ch * videoRatio);
+          }
+
+          return (
+            <View
+              style={{
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              pointerEvents="box-none"
+            >
+              <Video
+                ref={videoRef}
+                source={videoSource}
+                style={{ width: vw, height: vh, backgroundColor: "#000" }}
+                pointerEvents="auto"
+                resizeMode={ResizeMode.CONTAIN}
+                onPlaybackStatusUpdate={onStatus}
+                shouldPlay={shouldAutoPlay}
+                isLooping={false}
+                isMuted={isMuted}
+              />
+            </View>
+          );
+        })()}
 
         <LinearGradient
           colors={["rgba(0,0,0,0.30)", "transparent", "rgba(0,0,0,0.78)"]}
